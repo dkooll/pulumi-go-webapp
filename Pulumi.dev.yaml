@@ -1,0 +1,13 @@
+config:
+  pulumi-azure-go:acr:
+    Location: westeurope
+    rgName: rg-acr-weu
+    SkuName: Standard
+    EnableRBAC: true
+  pulumi-azure-go:aks:
+    Location: westeurope
+    RgName: rg-aks-weu
+    AdminUserEnabled: true
+    KubernetesVersion: "1.23.5"
+    NodeResourceGroup: rg-aks-weu-node
+    NodeCount: 1
