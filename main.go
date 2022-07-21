@@ -24,6 +24,7 @@ type AksParams struct {
 	NodeCount         int
 	RgName            string
 	Location          string
+	resourceId        pulumi.StringOutput
 }
 
 func main() {
@@ -43,7 +44,6 @@ func main() {
 
 		var y AksParams
 		cfg.RequireObject("aks", &y)
-
 		aks.CreateAks(ctx, "aks", &aks.AksArgs{
 			ResourceName:      pulumi.String("aks" + RandomString(5)),
 			EnableRBAC:        pulumi.Bool(y.EnableRBAC),
@@ -53,6 +53,7 @@ func main() {
 			ResourceGroup:     pulumi.String(y.RgName),
 			Location:          pulumi.String(y.Location),
 		})
+		ctx.Export("resourceId", y.resourceId)
 
 		return nil
 	})

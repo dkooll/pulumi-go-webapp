@@ -1,6 +1,8 @@
 package aks
 
 import (
+	"fmt"
+
 	"github.com/pulumi/pulumi-azure-native/sdk/go/azure/containerservice"
 	"github.com/pulumi/pulumi-azure/sdk/v5/go/azure/core"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
@@ -8,6 +10,8 @@ import (
 
 type Aks struct {
 	pulumi.ResourceState
+
+	resourceId pulumi.StringOutput
 }
 
 type AksArgs struct {
@@ -18,12 +22,13 @@ type AksArgs struct {
 	ResourceGroup     pulumi.StringInput
 	NodeCount         pulumi.IntInput
 	Location          pulumi.StringInput
+	resourceId        pulumi.StringOutput
 }
 
 func CreateAks(ctx *pulumi.Context, name string, args *AksArgs, opts ...pulumi.ResourceOption) (*Aks, error) {
 	aks := &Aks{}
 
-	err := ctx.RegisterComponentResource("examples:aks:Aks", name, aks, opts...)
+	err := ctx.RegisterComponentResource("resource:index:Aks", name, aks, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -31,13 +36,14 @@ func CreateAks(ctx *pulumi.Context, name string, args *AksArgs, opts ...pulumi.R
 	rgs, err := core.NewResourceGroup(ctx, "resourceGroups", &core.ResourceGroupArgs{
 		Name:     args.ResourceGroup,
 		Location: args.Location,
-	}, nil)
+	}, pulumi.Parent(aks))
+
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error creating resource group: %v", err)
 	}
 
-	containerservice.NewManagedCluster(ctx, "akss", &containerservice.ManagedClusterArgs{
-		Location: pulumi.String("westeurope"),
+	k8s, err := containerservice.NewManagedCluster(ctx, "akss", &containerservice.ManagedClusterArgs{
+		Location: rgs.Location,
 		AgentPoolProfiles: containerservice.ManagedClusterAgentPoolProfileArray{
 			&containerservice.ManagedClusterAgentPoolProfileArgs{
 				Count:              args.NodeCount,
@@ -61,15 +67,16 @@ func CreateAks(ctx *pulumi.Context, name string, args *AksArgs, opts ...pulumi.R
 			Name: pulumi.String("Basic"),
 			Tier: pulumi.String("Free"),
 		},
+	}, pulumi.Parent(rgs))
+
+	if err != nil {
+		return nil, fmt.Errorf("error creating cluster: %v", err)
+	}
+
+	ctx.RegisterResourceOutputs(aks, pulumi.Map{
+		"resourceId": k8s.ID(),
 	})
+
+	ctx.Export("resourceId", k8s.ID())
 	return aks, nil
 }
-
-// existing rg
-// rgaks, err := core.LookupResourceGroup(ctx, &core.LookupResourceGroupArgs{
-// 	Name: "rg-acr-weeu",
-// }, nil)
-// if err != nil {
-// 	return err
-// }
-// locationParam := rgaks.Location
