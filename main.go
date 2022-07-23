@@ -15,6 +15,7 @@ type AcrParams struct {
 	AdminUserEnabled bool
 	SkuName          string
 	EnableRBAC       bool
+	ResourceIds      string
 }
 
 type AksParams struct {
@@ -24,7 +25,7 @@ type AksParams struct {
 	NodeCount         int
 	RgName            string
 	Location          string
-	resourceId        pulumi.StringOutput
+	//Scope             string
 }
 
 func main() {
@@ -52,8 +53,8 @@ func main() {
 			NodeCount:         pulumi.Int(y.NodeCount),
 			ResourceGroup:     pulumi.String(y.RgName),
 			Location:          pulumi.String(y.Location),
+			//Scope:             pulumi.String(x.ResourceIds),
 		})
-		ctx.Export("resourceId", y.resourceId)
 
 		return nil
 	})

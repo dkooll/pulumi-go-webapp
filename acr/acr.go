@@ -10,6 +10,8 @@ import (
 
 type Acr struct {
 	pulumi.ResourceState
+
+	ResourceIds pulumi.StringOutput `pulumi:"ids"`
 }
 
 type AcrArgs struct {
@@ -32,12 +34,11 @@ func CreateAcr(ctx *pulumi.Context, name string, args *AcrArgs, opts ...pulumi.R
 		Name:     args.ResourceGroup,
 		Location: args.Location,
 	}, pulumi.Parent(acr))
-
 	if err != nil {
 		return nil, fmt.Errorf("error creating resource group: %v", err)
 	}
 
-	containerregistry.NewRegistry(ctx, "acr", &containerregistry.RegistryArgs{
+	registry, err := containerregistry.NewRegistry(ctx, "acr", &containerregistry.RegistryArgs{
 		RegistryName:      args.RegistryName,
 		AdminUserEnabled:  args.AdminUserEnabled,
 		Location:          rg.Location,
@@ -46,9 +47,11 @@ func CreateAcr(ctx *pulumi.Context, name string, args *AcrArgs, opts ...pulumi.R
 			Name: args.SkuName,
 		},
 	}, pulumi.Parent(rg))
-
 	if err != nil {
 		return nil, fmt.Errorf("error creating registry: %v", err)
 	}
+
+	acr.ResourceIds = registry.ID().ToStringOutput()
+	ctx.Export("ids", acr.ResourceIds)
 	return acr, nil
 }

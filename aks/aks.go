@@ -3,7 +3,8 @@ package aks
 import (
 	"fmt"
 
-	"github.com/pulumi/pulumi-azure-native/sdk/go/azure/containerservice"
+	"github.com/pulumi/pulumi-azure/sdk/v5/go/azure/authorization"
+	"github.com/pulumi/pulumi-azure/sdk/v5/go/azure/containerservice"
 	"github.com/pulumi/pulumi-azure/sdk/v5/go/azure/core"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
@@ -11,7 +12,7 @@ import (
 type Aks struct {
 	pulumi.ResourceState
 
-	resourceId pulumi.StringOutput
+	ResourceId pulumi.StringOutput `pulumi:"id"`
 }
 
 type AksArgs struct {
@@ -22,7 +23,7 @@ type AksArgs struct {
 	ResourceGroup     pulumi.StringInput
 	NodeCount         pulumi.IntInput
 	Location          pulumi.StringInput
-	resourceId        pulumi.StringOutput
+	Scope             pulumi.StringInput
 }
 
 func CreateAks(ctx *pulumi.Context, name string, args *AksArgs, opts ...pulumi.ResourceOption) (*Aks, error) {
@@ -37,46 +38,50 @@ func CreateAks(ctx *pulumi.Context, name string, args *AksArgs, opts ...pulumi.R
 		Name:     args.ResourceGroup,
 		Location: args.Location,
 	}, pulumi.Parent(aks))
-
 	if err != nil {
 		return nil, fmt.Errorf("error creating resource group: %v", err)
 	}
 
-	k8s, err := containerservice.NewManagedCluster(ctx, "akss", &containerservice.ManagedClusterArgs{
-		Location: rgs.Location,
-		AgentPoolProfiles: containerservice.ManagedClusterAgentPoolProfileArray{
-			&containerservice.ManagedClusterAgentPoolProfileArgs{
-				Count:              args.NodeCount,
-				EnableAutoScaling:  pulumi.Bool(false),
-				EnableNodePublicIP: pulumi.Bool(true),
-				Mode:               pulumi.String("System"),
-				Name:               pulumi.String("default"),
-				OsType:             pulumi.String("Linux"),
-				Type:               pulumi.String("VirtualMachineScaleSets"),
-				VmSize:             pulumi.String("Standard_B2s"),
-			},
+	k8s, err := containerservice.NewKubernetesCluster(ctx, "akss", &containerservice.KubernetesClusterArgs{
+		Name:                          args.ResourceName,
+		Location:                      rgs.Location,
+		ResourceGroupName:             rgs.Name,
+		NodeResourceGroup:             args.NodeResourceGroup,
+		RoleBasedAccessControlEnabled: args.EnableRBAC,
+		DnsPrefix:                     pulumi.String("akss"),
+		KubernetesVersion:             args.KubernetesVersion,
+		SkuTier:                       pulumi.String("Free"),
+		DefaultNodePool: &containerservice.KubernetesClusterDefaultNodePoolArgs{
+			NodeCount:          args.NodeCount,
+			Name:               pulumi.String("default"),
+			EnableAutoScaling:  pulumi.Bool(false),
+			EnableNodePublicIp: pulumi.Bool(true),
+			OsSku:              pulumi.String("Ubuntu"),
+			Type:               pulumi.String("VirtualMachineScaleSets"),
+			VmSize:             pulumi.String("Standard_D2_v2"),
 		},
-		DnsPrefix:         pulumi.String("akss"),
-		EnableRBAC:        args.EnableRBAC,
-		Identity:          &containerservice.ManagedClusterIdentityArgs{Type: containerservice.ResourceIdentityTypeSystemAssigned},
-		KubernetesVersion: args.KubernetesVersion,
-		NodeResourceGroup: args.NodeResourceGroup,
-		ResourceGroupName: rgs.Name,
-		ResourceName:      args.ResourceName,
-		Sku: &containerservice.ManagedClusterSKUArgs{
-			Name: pulumi.String("Basic"),
-			Tier: pulumi.String("Free"),
+		Identity: &containerservice.KubernetesClusterIdentityArgs{
+			Type: pulumi.String("SystemAssigned"),
 		},
 	}, pulumi.Parent(rgs))
-
 	if err != nil {
 		return nil, fmt.Errorf("error creating cluster: %v", err)
 	}
 
-	ctx.RegisterResourceOutputs(aks, pulumi.Map{
-		"resourceId": k8s.ID(),
-	})
+	//acr pull rights aks mi
+	authorization.NewAssignment(ctx, "ra", &authorization.AssignmentArgs{
+		PrincipalId: k8s.KubeletIdentity.ApplyT(func(kubeletIdentity containerservice.KubernetesClusterKubeletIdentity) (string, error) {
+			return *kubeletIdentity.ObjectId, nil
+		}).(pulumi.StringOutput),
+		RoleDefinitionName:           pulumi.String("AcrPull"),
+		Scope:                        args.Scope,
+		SkipServicePrincipalAadCheck: pulumi.Bool(true),
+	}, pulumi.Parent(k8s))
+	if err != nil {
+		return nil, fmt.Errorf("error creating role assignment: %v", err)
+	}
 
-	ctx.Export("resourceId", k8s.ID())
+	aks.ResourceId = k8s.ID().ToStringOutput()
+	ctx.Export("id", aks.ResourceId)
 	return aks, nil
 }
